@@ -21,21 +21,53 @@
 
 using namespace std;
 
-#define DEBUG_MODE 0
+#define DEBUG_MODE 1
 
 #define TEST 1
 
 #define MAXNODES 500
 
-class Empty {
+#define EdgeDiff 1
 
+class EdgeLabel {
+public:
+	float score;
 };
-istream& operator>>(istream& in, Empty &) {
+istream& operator>>(istream& in, EdgeLabel &l) {
+	in >> l.score;
 	return in;
 }
-ostream& operator>>(ostream& out, Empty &) {
+ostream& operator>>(ostream& out, EdgeLabel &l) {
+	out << l.score;
 	return out;
 }
+
+class EdgeComparator: public AttrComparator {
+
+private:
+	double threshold;
+public:
+	EdgeComparator(double thr) {
+		threshold = thr;
+
+	}
+	virtual bool compatible(void *la, void*lb) {
+		//SUBGRAPH
+		EdgeLabel *a = (EdgeLabel *) la;
+		//GRAPH
+		EdgeLabel *b = (EdgeLabel *) lb;
+
+		if ( DEBUG_MODE == 1) {
+			cout << " a: " << a->score << " ";
+			cout << " b: " << b->score << endl;
+			cout << endl;
+		}
+		float diff = a->score - b->score;
+		if (diff > 1 || diff < -1)
+			return false;
+		return true;
+	}
+};
 
 class Label {
 
@@ -95,9 +127,11 @@ public:
 			cout << " b: " << b->name << endl;
 			cout << endl;
 		}
+
 		if (isPositionSpecific) {
-			//cout << "position Specific" << endl;
+			cout << "position Specific" << endl;
 			string temp[20];
+			cout << "a is: " << a->id << endl;
 			for (int i = 0; i < position.at(a->id).size(); i++)
 				temp[i] = position.at(a->id).at(i);
 			if (findor(temp, 20, b->name)) {
@@ -141,8 +175,6 @@ public:
 					return false;
 			}
 			if (findor(B, (sizeof(B) / sizeof(B[0])), a->name)) {
-				cout << "match b: " << "a: " << a->name << " " << a->id
-						<< " b: " << b->name << " " << b->id << endl;
 				if (findor(B, (sizeof(B) / sizeof(B[0])), b->name)) {
 					if ( DEBUG_MODE == 1)
 						cout << "match" << "a: " << a->name << " " << a->id
@@ -224,7 +256,8 @@ bool my_visitor(int n, node_id ni1[], node_id ni2[], void *usr_data) {
 	string match = targetName + " ";
 	//cout << "a match has been found " << endl;
 	for (i = 0; i < n; i++) {
-		match += to_string(ni1[i]) + " " + to_string(ni2[i]) + " , ";
+		match += to_string(ni1[i]) + " " + to_string(tar_nums.at(ni2[i]))
+				+ " , ";
 		fprintf(f, " (%hd,%hd)", ni1[i], tar_nums.at(ni2[i]));
 		score = score + scoring(ni1[i], ni2[i]);
 	}
@@ -257,28 +290,32 @@ vector<string> splitstr(const string& str, const string& delim) {
 
 int main(int argc, const char * argv[]) {
 	clock_t tStart = clock();
-
 	int numberOfResults = stoi(argv[2]);
 
 	//subgraph
 	string paternName = argv[1];
+
 	//Allocate attributes to nodes and edges
 	NewAllocator<Label> node_allocator;
-	NullAllocator<Empty> edge_allocator;
+	NewAllocator<EdgeLabel> edge_allocator;
 
 	//open the graph
 	ifstream graphInPat(paternName);
-	StreamARGLoader<Label, Empty> pattloader(&node_allocator, &edge_allocator,
-			graphInPat);
+
+	StreamARGLoader<Label, EdgeLabel> pattloader(&node_allocator,
+			&edge_allocator, graphInPat);
 
 	//Read files of graphs to store more data
 	ifstream graphInPat2(paternName);
-	ARGraph<Label, void> p(&pattloader);
+
+	ARGraph<Label, EdgeLabel> p(&pattloader);
 
 	p.SetNodeDestroyer(new LabelDestroyer());
+	p.SetEdgeDestroyer(new LabelDestroyer());
 
 	double my_threshold = 0.1;
 	p.SetNodeComparator(new LabelComparator(my_threshold));
+	p.SetEdgeComparator(new EdgeComparator(EdgeDiff));
 
 	string data;
 	graphInPat2 >> data;
@@ -342,7 +379,7 @@ int main(int argc, const char * argv[]) {
 				//open the graph
 				ifstream graphInTarg(targetName);
 				//Read graphs
-				StreamARGLoader<Label, Empty> targloader(&node_allocator,
+				StreamARGLoader<Label, EdgeLabel> targloader(&node_allocator,
 						&edge_allocator, graphInTarg);
 
 				//Read files of graphs to store more data
@@ -406,10 +443,10 @@ int main(int argc, const char * argv[]) {
 				 pat.InsertEdge(1, 4, NULL);
 				 */
 
-				ARGraph<Label, void> g(&targloader);
+				ARGraph<Label, EdgeLabel> g(&targloader);
 
 				g.SetNodeDestroyer(new LabelDestroyer());
-
+				g.SetEdgeDestroyer(new LabelDestroyer());
 				//the starting state
 				VF2SubState s0(&p, &g);
 
@@ -419,7 +456,7 @@ int main(int argc, const char * argv[]) {
 				stream << "Results/output-" << targetName.erase(4, 4) << ".txt";
 				string str = stream.str();
 				const char *output = str.c_str();
-				if (DEBUG_MODE == 0)
+				if (DEBUG_MODE == 1)
 					cout << "output is: " << output << endl;
 				FILE * f = fopen(output, "w");
 				//running the match algorithm
