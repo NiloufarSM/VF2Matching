@@ -21,7 +21,7 @@
 
 using namespace std;
 
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 #define TEST 1
 
@@ -62,9 +62,16 @@ public:
 			cout << " b: " << b->score << endl;
 			cout << endl;
 		}
+		//if (b->score == 6.12215)
+
 		float diff = a->score - b->score;
-		if (diff > 1 || diff < -1)
+		//cout << "diff: " << diff << endl;
+		if (diff > threshold || diff < -threshold)
 			return false;
+		//if (b->score > 6.121 && b->score < 6.14)
+		//cout << "yeaaaaahhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh";
+		//cout << "a score: " << a->score;
+		//cout << "b score: " << b->score << endl;
 		return true;
 	}
 };
@@ -99,13 +106,13 @@ public:
 string targetName = "1bmc.grf";
 bool isPositionSpecific = false;
 vector<vector<string>> position;
-string positive[] = { "ARG", "HIS", "" };
-string negative[] = { "ASP", "GLU", "LYS", "MET", "" };
+string positive[] = { "ARG", "HIS", "LYS", "" };
+string negative[] = { "ASP", "GLU", "" };
 string B[] = { "SER", "THR", "ASN", "GLN", "" };
 string C[] = { "CYS", "GLY", "PRO", "" };
-string D[] = { "ALA", "ILE", "LEU", "PHE", "TYR", "TRP", "VAL", "" };
+string D[] = { "ALA", "ILE", "LEU", "MET", "PHE", "TYR", "TRP", "VAL", "" };
 
-vector<pair<string, int>> matches;
+vector<pair<string, float>> matches;
 
 class LabelComparator: public AttrComparator {
 
@@ -129,9 +136,7 @@ public:
 		}
 
 		if (isPositionSpecific) {
-			cout << "position Specific" << endl;
 			string temp[20];
-			cout << "a is: " << a->id << endl;
 			for (int i = 0; i < position.at(a->id).size(); i++)
 				temp[i] = position.at(a->id).at(i);
 			if (findor(temp, 20, b->name)) {
@@ -225,8 +230,10 @@ vector<string> pat_aminos;
 vector<int> pat_ids;
 vector<string> tar_aminos;
 vector<int> tar_ids;
-vector<int> tar_nums;
+vector<string> tar_nums;
+vector<char> tar_chains;
 int maxScore = -1000;
+vector<float> finalEdgeScore;
 
 int scoring(int ni1, int ni2) {
 	string first = pat_aminos.at(ni1);
@@ -246,9 +253,11 @@ int scoring(int ni1, int ni2) {
 	return scoring_Matrix[firstID][secondID];
 }
 
+vector<vector<int>> gLabels;
+int mcount = 0;
 bool my_visitor(int n, node_id ni1[], node_id ni2[], void *usr_data) {
 	FILE *f = (FILE *) usr_data;
-
+	vector<int> glabel;
 	//print match
 	int i;
 	int score = 0;
@@ -256,16 +265,19 @@ bool my_visitor(int n, node_id ni1[], node_id ni2[], void *usr_data) {
 	string match = targetName + " ";
 	//cout << "a match has been found " << endl;
 	for (i = 0; i < n; i++) {
-		match += to_string(ni1[i]) + " " + to_string(tar_nums.at(ni2[i]))
-				+ " , ";
+		match += to_string(ni1[i]) + " " + tar_nums.at(ni2[i]) + " , ";
 		fprintf(f, " (%hd,%hd)", ni1[i], tar_nums.at(ni2[i]));
+		glabel.push_back(ni2[i]);
 		score = score + scoring(ni1[i], ni2[i]);
 	}
 	if (maxScore < score) {
 		maxScore = score;
 	}
+	gLabels.push_back(glabel);
+
 	fprintf(f, " %hd \n", score);
 	matches.push_back(make_pair(match, score));
+	mcount++;
 	return false;
 }
 
@@ -304,6 +316,7 @@ int main(int argc, const char * argv[]) {
 
 	StreamARGLoader<Label, EdgeLabel> pattloader(&node_allocator,
 			&edge_allocator, graphInPat);
+	graphInPat.close();
 
 	//Read files of graphs to store more data
 	ifstream graphInPat2(paternName);
@@ -317,6 +330,19 @@ int main(int argc, const char * argv[]) {
 	p.SetNodeComparator(new LabelComparator(my_threshold));
 	p.SetEdgeComparator(new EdgeComparator(EdgeDiff));
 
+	vector<float> pdist;
+	for (int i = 0; i < p.NodeCount(); i++)
+		for (int j = 0; j < p.NodeCount(); j++) {
+			cout << "i: " << i << " j: " << j << endl;
+			if (i != j) {
+				if (p.GetEdgeAttr(i, j) != NULL) {
+					cout << "pdist:" << abs(p.GetEdgeAttr(i, j)->score) << endl;
+					pdist.push_back(abs(p.GetEdgeAttr(i, j)->score));
+				}
+			}
+			cout << "here " << p.NodeCount() << endl;
+		}
+
 	string data;
 	graphInPat2 >> data;
 	int nOfresidues = stoi(data);
@@ -327,6 +353,9 @@ int main(int argc, const char * argv[]) {
 		pat_aminos.push_back(data);
 		graphInPat2 >> data;
 	}
+
+	graphInPat2.close();
+
 	//graph
 
 	//Read Scoring Matrix
@@ -342,6 +371,7 @@ int main(int argc, const char * argv[]) {
 			scoring_Matrix[i][j] = stoi(data);
 		}
 	}
+	infile.close();
 
 	//Read position specific file
 	ifstream pfile;
@@ -361,6 +391,7 @@ int main(int argc, const char * argv[]) {
 		//cout << "position lines: " << position.size() << endl;
 
 	}
+	pfile.close();
 
 	struct dirent *entry = nullptr;
 	DIR *dp = nullptr;
@@ -374,16 +405,27 @@ int main(int argc, const char * argv[]) {
 				tar_aminos.clear();
 				tar_ids.clear();
 				tar_nums.clear();
+				gLabels.clear();
 				targetName = filename;
 
 				//open the graph
-				ifstream graphInTarg(targetName);
+				ifstream graphInTarg("graphs/" + targetName, ios::in);
+//				char buffer[256];
+//				if (!graphInTarg.is_open()) {
+//					cout << "Error opening file";
+//					exit(1);
+//				}
+
+//				while (!graphInTarg.eof()) {
+//					graphInTarg.getline(buffer, 100);
+//					cout << buffer << endl;
+//				}
 				//Read graphs
 				StreamARGLoader<Label, EdgeLabel> targloader(&node_allocator,
 						&edge_allocator, graphInTarg);
-
+				graphInTarg.close();
 				//Read files of graphs to store more data
-				ifstream graphInTarg2(targetName);
+				ifstream graphInTarg2("graphs/" + targetName);
 
 				graphInTarg2 >> data;
 				nOfresidues = stoi(data);
@@ -393,9 +435,9 @@ int main(int argc, const char * argv[]) {
 					graphInTarg2 >> data;
 					tar_aminos.push_back(data);
 					graphInTarg2 >> data;
-					tar_nums.push_back(stoi(data));
+					tar_nums.push_back(data);
 				}
-
+				graphInTarg2.close();
 				/*
 				 //example of creating a graph manually
 				 ARGEdit ed;
@@ -460,8 +502,28 @@ int main(int argc, const char * argv[]) {
 					cout << "output is: " << output << endl;
 				FILE * f = fopen(output, "w");
 				//running the match algorithm
-				cout << "number of matches: " << match(&s0, my_visitor, f)
-						<< endl;
+				int nOfmatches = match(&s0, my_visitor, f);
+				cout << "numberOfmatches " << nOfmatches << endl;
+
+				//compute score for edges
+				for (int k = 0; k < nOfmatches; k++) {
+					int c = 0;
+					float edgeScore = 0;
+					for (int l1 = 0; l1 < gLabels.at(k).size(); l1++)
+						for (int l2 = 0; l2 < gLabels.at(k).size(); l2++)
+							if (l1 != l2) {
+								edgeScore += abs(
+										g.GetEdgeAttr(gLabels.at(k).at(l1),
+												gLabels.at(k).at(l2))->score
+												- pdist.at(c));
+								cout << "l1: " << l1 << "l2: " << l2
+										<< " edge score: " << edgeScore << endl;
+								c++;
+
+							}
+					finalEdgeScore.push_back(edgeScore);
+				}
+
 				/*node_id id = 0;
 				 cout << "hey: " << g.NodeCount();
 				 for (int i = 0; i < g.NodeCount(); i++) {
@@ -493,11 +555,47 @@ int main(int argc, const char * argv[]) {
 
 	closedir(dp);
 
-	sort(matches.begin(), matches.end(), comparator);
-	for (int i = 0; i < numberOfResults; i++) {
-		cout << matches[i].first << " " << matches[i].second << endl;
+	for (int i = 0; i < matches.size(); i++) {
+		float f = finalEdgeScore.at(i);
+		if (f != 0)
+			matches[i].second *= (1 / f);
+		if (f == 0)
+			matches[i].second += 1000;
 	}
+
+	sort(matches.begin(), matches.end(), comparator);
+
+	for (int i = 0; i < numberOfResults && i < matches.size(); i++) {
+		string m = matches[i].first;
+		cout << m << " " << matches[i].second << endl;
+//		m = m.substr(m.find(" ") + 1);
+//		do {
+//			int token1 = stoi(m.substr(0, m.find(" ")));
+//			m = m.substr(m.find(" ") + 1);
+//			int token2 = stoi(m.substr(0, m.find(" ")));
+//			m = m.substr(m.find(" ") + 3);
+//			glabels.push_back(token2);
+//			cout << "token1: " << token1 << " token2: " << token2 << endl;
+//
+//		} while (m != "");
+//		for (int key : glabels) {
+//			vector<int>::iterator itr = find(tar_nums.begin(), tar_nums.end(),
+//					key);
+//
+//			if (itr != tar_nums.cend()) {
+//				cout << "tarnums: " << tar_nums.at(119);
+//				cout << "Element present at index " << key << " "
+//						<< distance(tar_nums.begin(), itr) << endl;
+//			} else {
+//				std::cout << "Element not found";
+//			}
+//		}
+
+	}
+
+	cout << "this is the end" << endl;
 	printf("Time taken: %.2fs\n", (double) (clock() - tStart) / CLOCKS_PER_SEC);
+	cout << "hold your breath and count to 10" << endl;
 
 	return 0;
 }

@@ -1,0 +1,6 @@
+ASP
+GLU
+HIS
+HIS
+ASN
+ASN

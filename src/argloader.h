@@ -148,8 +148,8 @@ void StreamARGLoader<Node, Edge>::readLine(istream &in, char *line) {
 	char *p;
 	do {
 		*line = '\0';
-		if (!in.good())
-			error("End of file or reading error");
+		//if (!in.good())
+			//error("End of file or reading error");
 		in.getline(line, MAX_LINE);
 		for (p = line; isspace(*p); p++)
 			;
